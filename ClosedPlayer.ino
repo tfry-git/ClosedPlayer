@@ -24,15 +24,15 @@
 
 #include "AudioFileSourceSD.h"
 #include "AudioFileSourceBuffer.h"
-#include "AudioOutputBuffer.h"
+//#include "AudioOutputBuffer.h"
 #include "AudioGeneratorMP3.h"
 #include "AudioOutputI2SNoDAC.h"
-#include "AudioOutputI2S.h"
+//#include "AudioOutputI2S.h"
 
 AudioFileSourceSD *file;
 AudioGeneratorMP3 *mp3;
 AudioFileSourceBuffer *buff;
-AudioOutputBuffer *obuff;
+//AudioOutputBuffer *obuff;
 AudioOutput *out;
 
 SPIClass sdspi(HSPI);
@@ -43,13 +43,13 @@ File root;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
-void mp3loop(void *);
+void uiloop(void *);
 
 void setup() {
 	Serial.begin(38400);
 
 	SPI.begin();			// Init SPI bus
-  sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble upload new code, while using the default pins
+  sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
   pinMode(5, OUTPUT); //VSPI CS
   pinMode(15, OUTPUT); //HSPI CS
 
@@ -65,17 +65,14 @@ void setup() {
 
   file = new AudioFileSourceSD("/test.mp3");
   buff = new AudioFileSourceBuffer(file, 2048);
-  pinMode(25, OUTPUT); //HSPI SS
-  pinMode(26, OUTPUT); //HSPI SS
 
-//  out = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
-   out = new AudioOutputI2SNoDAC(0, true); // Output as PDM via I2S: pin 22
-//  obuff = new AudioOutputBuffer(32600, out);
+  //out = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
+  out = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
+  //obuff = new AudioOutputBuffer(32600, out);
   mp3 = new AudioGeneratorMP3();
   file->seek (399999, SEEK_SET); // test seeking
   mp3->begin(buff, out);
-//  Serial.println(file->isOpen());
-//Serial.println(file->getPos());
+
   // Handle controls in separate task. Esp. reading RFID tags takes too long, causes hickups in the playback, if used in the same thread.
   xTaskCreate(uiloop, "ui", 10000, NULL, 1, NULL);
 }
