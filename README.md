@@ -65,5 +65,5 @@ ESP32 to Amp (PDM output via I2S):
 
 - Refers to the fact that I'd like my files nearby (close), rather than in the cloud
 - Hints that no media will have to be inserted (for the most part)
-- Hints, ironically, that this player is open source, not closed
-- Is a reference to the late 1960's "Close N'Play", which was quit a nice shot at a kid-friendly audio player in its time.
+- Hints, tongue-in-cheek, that this player is open source, not closed
+- Is a reverence to the late 1960's "Close N'Play", which was quit a nice shot at a kid-friendly audio player in its time.

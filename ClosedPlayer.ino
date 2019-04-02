@@ -21,6 +21,7 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <SD.h>
+#include "Playlist.h"
 
 #include "AudioFileSourceSD.h"
 #include "AudioFileSourceBuffer.h"
@@ -43,6 +44,7 @@ File root;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
+SemaphoreHandle_t control_mutex;
 void uiloop(void *);
 
 void setup() {
@@ -70,44 +72,157 @@ void setup() {
   out = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
   //obuff = new AudioOutputBuffer(32600, out);
   mp3 = new AudioGeneratorMP3();
-  file->seek (399999, SEEK_SET); // test seeking
-  mp3->begin(buff, out);
 
+  control_mutex = xSemaphoreCreateMutex();
   // Handle controls in separate task. Esp. reading RFID tags takes too long, causes hickups in the playback, if used in the same thread.
   xTaskCreate(uiloop, "ui", 10000, NULL, 1, NULL);
 }
 
-int card = 0;
-bool playing = true;
-int iteration = 0;
+// four bits to hex notation. Only for values between 0 and 15, obviously.
+char bitsToHex (byte bits) {
+  if (bits <= 9) return ('0' + bits);
+  return ('a') + bits;
+}
+
+String uidToString(const MFRC522::Uid &uid) {
+  String ret;
+  for (int i = 0; i < uid.size; ++i) {
+    ret += bitsToHex(uid.uidByte[i] >> 4);
+    ret += bitsToHex(uid.uidByte[i] & 0xf);
+  }
+  return ret;
+}
+
+struct ControlsState {
+  ControlsState() { have_card = false; };
+  bool have_card;
+  String uid;
+} controls;
+
+struct PlayerState {
+  PlayerState() { finished = false; playing = false; };
+  File folder;
+  String uid;
+  bool finished;
+  bool playing;
+  Playlist list;
+} state;
 
 void uiloop(void *) {
+  static int card = 0;
+  // keep a temporary copy of all control values, to keep mutex locking simple
+  ControlsState controls_copy;
+
   while (true) {
-    --card;
-    if (card < 0) card = 0;
-    if (mfrc522.PICC_IsNewCardPresent()) {
-      //if (mfrc522.PICC_ReadCardSerial())
+    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+      controls_copy.have_card = true;
+      controls_copy.uid = uidToString (mfrc522.uid);
+      if (!card) {
+        Serial.println("new card");
+      }
       card = 5;
+    } else {
+      // It's not unusual at all for a card to "disappear" for a read or two,
+      // so we assume the previous card is still present until we've seen several
+      // misses in a row.
+      if (--card <= 0) {
+        card = 0;
+        controls_copy.have_card = false;
+        controls_copy.uid = String();
+      }
     }
-    Serial.println(card);
+
+    xSemaphoreTake(control_mutex, portMAX_DELAY);
+    controls = controls_copy;
+    xSemaphoreGive(control_mutex);
+
     vTaskDelay (10);
   }
 }
 
-void loop() {
-  if (mp3->isRunning()) {
-    if (card) {
-      if (!playing) {
-        out->begin ();
-        playing = true;
-      }
-      if (!mp3->loop()) mp3->stop();
+void stopPlaying() {
+  out->stop();
+  state.playing = false;
+}
+
+bool isFolderAssigned(String dir) {
+  return false;
+}
+
+File findNextUnassignedMP3Folder(File dir=SD.open("/")) {
+  Serial.print("scanning ");
+  Serial.println(dir.name());
+
+  bool assigned = isFolderAssigned(dir.name());  // If this folder is already assigned, it might still have unassigned sub-folders
+
+  File entry = dir.openNextFile();
+  while (entry) {
+    if (entry.isDirectory()) {
+      File candidate = findNextUnassignedMP3Folder(entry);
+      if (candidate) return candidate;
     } else {
-      if (playing) {
-        out->stop ();
-        playing = false;
+      if (assigned) continue;
+
+      String n(entry.name());
+      n.toLowerCase();
+      if (n.endsWith(".mp3")) {
+        return (dir);
       }
     }
+    entry = dir.openNextFile();
   }
+  return File();
+}
+
+void startTrack(String track) {
+  Serial.print("starting new track: ");
+  Serial.println(track);
+
+  if (file->open(track.c_str())) {
+    buff->seek(0, SEEK_SET);
+    mp3->begin(buff, out);
+  } else {
+    mp3->stop();
+    state.finished = true;
+  }
+}
+
+void loadPlaylistForUid(String uid) {
+  // if there is no stored mapping for this uid, yet, try to associate it with a folder that has not yet been assigned
+  state.list = Playlist(findNextUnassignedMP3Folder());
+}
+
+void startOrResumePlaying() {
+  if (controls.uid == state.uid) {  // resume previous
+  } else {  // new tag
+    loadPlaylistForUid(controls.uid);
+    startTrack(state.list.next());
+    state.uid = controls.uid;
+  }
+  out->begin();
+  state.playing = true;
+}
+
+void nextTrack() {
+  startTrack(state.list.next());
+}
+
+void loop() {
+  xSemaphoreTake(control_mutex, portMAX_DELAY);
+  if (controls.have_card) {
+    if (!state.finished) {
+      if (!state.playing) {
+        startOrResumePlaying();
+      }
+      if (!mp3->loop()) {
+        nextTrack();
+      }
+    }
+  } else {
+    if (state.playing) {
+      stopPlaying();
+    }
+  }
+  xSemaphoreGive(control_mutex);
 }
 
