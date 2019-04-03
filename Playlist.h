@@ -36,6 +36,9 @@ public:
     entries = items;
   }
   Playlist(File directory) : Playlist() {
+    Serial.print("Creating playlist for ");
+    Serial.print(directory.name());
+
     directory.rewindDirectory();
     File entry = directory.openNextFile();
     while (entry) {
@@ -52,6 +55,9 @@ public:
     }
 
     std::sort(entries.begin(), entries.end());
+
+    Serial.print(entries.size());
+    Serial.println(" entries.");
   }
   ~Playlist() {
     delete sublist;
