@@ -233,9 +233,7 @@ void loadPlaylistForUid(String uid) {
     Serial.println(line);
     std::vector<String> dummy;
     getFilesInLine(line, &dummy);
-    Serial.println(dummy.size());
     known_directories.insert(known_directories.end(), dummy.begin(), dummy.end());
-    Serial.println(known_directories.size());
 
     if (line.startsWith(uid)) {
       Serial.print("Tag uid has ");
