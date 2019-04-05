@@ -73,7 +73,7 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
         break;
       }   
       cur = path.substring(pos, next);
-      pos = next;
+      pos = next + 1;
     }
     response->printf("<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body><h1>Listing path:</h1><h2>%s</h2>\n", backpath.c_str());
     File dir = SD.open(path);
@@ -90,13 +90,25 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
           url += urlencode(entry.name());
           response->printf("<li><a href=\"%s\">%s</a></li>\n", url.c_str(), entry.name());
           entry = dir.openNextFile();
+          response->printf("</li>");
         }
-        response->printf("</ul>");
-        response->printf("</ul>");
+        response->printf("</ul>\n");
+        response->printf("<form action=\"/mkdir\">Create subdir: <input type=\"text\" name=\"dir\"><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Create\"></form>\n", path.c_str());
       }
     }
     response->printf("</body></html>");
     request->send(response);
+  });
+  server->on("/mkdir", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    String path = "/";
+    if (request->hasParam("parent")) path = request->getParam("parent")->value();
+    if (request->hasParam("dir")) {
+      if (!path.endsWith("/")) path += "/";
+      path += request->getParam("dir")->value();
+    }
+    Serial.println(path.c_str());
+    SD.mkdir(path);
+    request->send(200, "text/html", "<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body><h1>Directory created</h1>(Click back in your browser)</body></html>");
   });
   server->begin();
 }
