@@ -22,13 +22,14 @@
 #include <MFRC522.h>
 #include <SD.h>
 #include "Playlist.h"
+#include "WebInterface.h"  // optional!
 
 #include "AudioFileSourceSD.h"
 #include "AudioFileSourceBuffer.h"
 //#include "AudioOutputBuffer.h"
 #include "AudioGeneratorMP3.h"
 #include "AudioOutputI2SNoDAC.h"
-//#include "AudioOutputI2S.h"
+#include "AudioOutputI2S.h"
 
 AudioFileSourceSD *file;
 AudioGeneratorMP3 *mp3;
@@ -54,6 +55,7 @@ void setup() {
   sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
   pinMode(5, OUTPUT); //VSPI CS
   pinMode(15, OUTPUT); //HSPI CS
+  startWebInterface(false);
 
 	mfrc522.PCD_Init();		// Init MFRC522
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
@@ -65,10 +67,11 @@ void setup() {
 
   Serial.println("Hardware init complete");
 
-  file = new AudioFileSourceSD("/test.mp3");
+  file = new AudioFileSourceSD();
   buff = new AudioFileSourceBuffer(file, 2048);
 
-  //out = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
+//  out = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
+//  out->SetGain(.5);
   out = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
   //obuff = new AudioOutputBuffer(32600, out);
   mp3 = new AudioGeneratorMP3();
