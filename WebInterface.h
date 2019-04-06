@@ -47,14 +47,39 @@ String urlencode(String in) {
   return ret;
 }
 
+String backPage(const String &message) {
+  return ("<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body>" + message + "<p><a href=\"javascript:window.location = document.referrer;\">&laquo; Back</a></p></body></html>");
+}
+
+/** Remove file / dir, recursively */
+void rmRf(const String &path) {
+  File f = SD.open(path);
+  if (!f) return;
+
+  if (f.isDirectory()) {
+    File e = f.openNextFile();
+    while (e) {
+      String p = e.name();
+      e = f.openNextFile();
+      rmRf(p);
+    }
+    f.close();
+    SD.rmdir(path);
+  } else {
+    f.close();
+    SD.remove(path);
+  }
+}
+
 void startWebInterface(bool access_point, const char* sess_id, const char *sess_pass) {
   if (access_point) {
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig (IPAddress (192,168,4,1), IPAddress (0,0,0,0), IPAddress (255,255,255,0));
-    WiFi.softAP("ClosedPlayer", "12345678");
+    WiFi.softAP("ClosedPlayer", "123456789");
   } else {
     WiFi.mode(WIFI_STA);
-    WiFi.begin(sess_id, sess_pass);
+    if (sess_id) WiFi.begin(sess_id, sess_pass);
+    else WiFi.begin();
   }
 
   server = new AsyncWebServer(80);
@@ -83,17 +108,16 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
       if (!dir.isDirectory()) {
         response->printf("<p>Is a file (and streaming not yet supported)</p>\n");
       } else {
-        response->printf("<ul>");
+        response->printf("<table border=\"1\">");
         File entry = dir.openNextFile();
         while(entry)  {
-          String url = "/?path=";
-          url += urlencode(entry.name());
-          response->printf("<li><a href=\"%s\">%s</a></li>\n", url.c_str(), entry.name());
+          String uri = urlencode(entry.name());
+          response->printf("<tr><td><a href=\"/?path=%s\">%s</a></li></td><td>%s</td><td><a href=\"/rm?path=%s\">REMOVE</a></td></tr>\n", uri.c_str(), entry.name(), entry.isDirectory() ? "" : String(entry.size()).c_str(), uri.c_str());
           entry = dir.openNextFile();
-          response->printf("</li>");
         }
-        response->printf("</ul>\n");
+        response->printf("</table>\n");
         response->printf("<form action=\"/mkdir\">Create subdir: <input type=\"text\" name=\"dir\"><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Create\"></form>\n", path.c_str());
+        response->printf("<form action=\"/put\" method=\"POST\" enctype=\"multipart/form-data\">Upload: <input type=\"file\" name=\"file\" multiple webkitdirectory><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Upload\"></form>\n", path.c_str());
       }
     }
     response->printf("</body></html>");
@@ -108,7 +132,40 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     }
     Serial.println(path.c_str());
     SD.mkdir(path);
-    request->send(200, "text/html", "<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body><h1>Directory created</h1>(Click back in your browser)</body></html>");
+    request->send(200, "text/html", backPage("<h1>Directory created</h1>").c_str());
+  });
+  server->on("/rm", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    String path;
+    if (request->hasParam("path")) path = request->getParam("path")->value();
+    if (path.length() < 1) return;
+    rmRf(path);
+    request->send(200, "text/html", backPage("<h1>Directory deleted</h1>"));
+  });
+  server->on("/put", HTTP_POST, [] (AsyncWebServerRequest *request) {
+    request->send(200);
+  }, [] (AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    static File out;
+    if(!index) {
+      if (out) out.close();
+      String dir = "/";
+      if (request->hasParam("parent")) dir = request->getParam("parent")->value();
+      int slashpos = filename.lastIndexOf("/");
+      if (slashpos > 0) {
+        dir += "/" + filename.substring(0, slashpos);
+        SD.mkdir(dir);
+        filename = dir + filename.substring(slashpos); // includes the slash itself
+      }
+      if (SD.exists(filename)) SD.remove(filename);
+      out = SD.open(filename, FILE_WRITE);
+    }
+
+    if (len) out.write(data, len);
+
+    if(final){
+      out.close();
+      String dir;
+      request->send(200, "text/html", backPage("<h1>Upload complete</h1>"));
+    }
   });
   server->begin();
 }
