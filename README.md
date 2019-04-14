@@ -58,6 +58,13 @@ ESP32 to Amp (PDM output via I2S; alternatives available):
   - This library can do much more than just MP3 decoding, so if you need other formats that should be really easy to add!
 - ESP8266Audio's unneccessary dependency ESP8266_Spiram (https://github.com/Gianbacchio/ESP8266_Spiram)
 
+## Basic operation
+
+- You will probably want to prepare your SD card with a few MP3 files (see below), before first start.
+- The first RFID tag scanned by the reader will become the "master tag". This one will not start any track, but will enable the WIFI interface while present (by default: AP mode, SSID "ClosedPlayer", PASS "123456789"). Note that some boards may brown out when starting WIFI while powered from USB. Should you have trouble getting WIFI to work, first thing to try will be running from a dedicated power supply (strong USB chargers or powerbanks are the easiest option).
+- The next RIFD tags scanned will become associated with folders containing MP3 files, automatically, one by one.
+- Association between RFID tags and files are stored in a file "tags.txt" in the root folder of the SD card. If auto-association does not produce the desired results, you can simply edit this in a text editor.
+
 ### SD-card file layout
 
 - Copy your MP3 files onto the SD-card, organized in directories.

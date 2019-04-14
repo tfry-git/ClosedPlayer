@@ -47,8 +47,11 @@ String urlencode(String in) {
   return ret;
 }
 
+const char htmlhead[] = "<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body>";
+const char htmlfoot[] = "</body></html>";
+
 String backPage(const String &message) {
-  return ("<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body>" + message + "<p><a href=\"javascript:window.location = document.referrer;\">&laquo; Back</a></p></body></html>");
+  return (htmlhead + message + "<p><a href=\"javascript:window.location = document.referrer;\">&laquo; Back</a></p>");
 }
 
 /** Remove file / dir, recursively */
@@ -72,6 +75,9 @@ void rmRf(const String &path) {
 }
 
 void startWebInterface(bool access_point, const char* sess_id, const char *sess_pass) {
+  if (server) return;
+  Serial.println("Starting WIFI");
+
   if (access_point) {
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig (IPAddress (192,168,4,1), IPAddress (0,0,0,0), IPAddress (255,255,255,0));
@@ -82,11 +88,13 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     else WiFi.begin();
   }
 
+  Serial.println("Starting Webinterface");
   server = new AsyncWebServer(80);
+
+  // On root ("/?path=XYZ") show a listing of files at the given path
   server->on("/", HTTP_GET, [] (AsyncWebServerRequest *request) {
     String path = "/";
     if (request->hasParam("path")) path = request->getParam("path")->value();
-    AsyncResponseStream *response = request->beginResponseStream("text/html");
     String backpath;
     String cur = "ROOT";
     int pos = 1;
@@ -100,28 +108,31 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
       cur = path.substring(pos, next);
       pos = next + 1;
     }
-    response->printf("<!DOCTYPE html><html><head><title>ClosedPlayer WebInterface</title></head><body><h1>Listing path:</h1><h2>%s</h2>\n", backpath.c_str());
+
     File dir = SD.open(path);
     if (!dir) {
-      response->printf("<h2>Could not be opened!</h2>\n");
+      request->send(500, "text/html", String(htmlhead) + "<h1>Could not be opened</h1>" + htmlfoot);
     } else {
       if (!dir.isDirectory()) {
-        response->printf("<p>Is a file (and streaming not yet supported)</p>\n");
+        request->send(dir, dir.name());
       } else {
-        response->printf("<table border=\"1\">");
+        AsyncResponseStream *response = request->beginResponseStream("text/html");
+        response->print(htmlhead);
+        response->printf("<h1>Listing path:</h1><h2>%s</h2>\n", backpath.c_str());
+        response->print("<table border=\"1\">");
         File entry = dir.openNextFile();
         while(entry)  {
           String uri = urlencode(entry.name());
           response->printf("<tr><td><a href=\"/?path=%s\">%s</a></li></td><td>%s</td><td><a href=\"/rm?path=%s\">REMOVE</a></td></tr>\n", uri.c_str(), entry.name(), entry.isDirectory() ? "" : String(entry.size()).c_str(), uri.c_str());
           entry = dir.openNextFile();
         }
-        response->printf("</table>\n");
+        response->print("</table>\n");
         response->printf("<form action=\"/mkdir\">Create subdir: <input type=\"text\" name=\"dir\"><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Create\"></form>\n", path.c_str());
         response->printf("<form action=\"/put\" method=\"POST\" enctype=\"multipart/form-data\">Upload: <input type=\"file\" name=\"file\" multiple webkitdirectory><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Upload\"></form>\n", path.c_str());
+        response->print(htmlfoot);
+        request->send(response);
       }
     }
-    response->printf("</body></html>");
-    request->send(response);
   });
   server->on("/mkdir", HTTP_GET, [] (AsyncWebServerRequest *request) {
     String path = "/";
@@ -168,6 +179,14 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     }
   });
   server->begin();
+}
+
+void stopWebInterface() {
+  if (!server) return;
+  delete server;
+  server = 0;
+  WiFi.mode(WIFI_OFF);
+  Serial.println("WIFI stopped");
 }
 
 #endif

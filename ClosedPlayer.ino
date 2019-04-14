@@ -55,7 +55,7 @@ void setup() {
   sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
   pinMode(5, OUTPUT); //VSPI CS
   pinMode(15, OUTPUT); //HSPI CS
-  startWebInterface(false);
+  stopWebInterface();
 
 	mfrc522.PCD_Init();		// Init MFRC522
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
@@ -155,9 +155,12 @@ void startTrack(String track) {
   if (track.length() && file->open(track.c_str())) {
     buff->seek(0, SEEK_SET);
     mp3->begin(buff, out);
+    state.finished = false;
   } else {
-    mp3->stop();
+    Serial.print("Empty track. stopping...");
+    stopPlaying();
     state.finished = true;
+    Serial.println(" stopped.");
   }
 }
 
@@ -209,40 +212,65 @@ File findNextUnassignedMP3Folder(const std::vector<String> &known_directories, F
   return File();
 }
 
-// tags.txt file format:
-// UID\tFLAGS\tDIR1\tDIR2\t...
-void getFilesInLine(const String &line, std::vector<String> *files) {
-  int pos = line.indexOf('\t', line.indexOf('\t') + 1);
-  if (pos >= 0) {
-    String dirspec = line.substring(pos+1);
-    while(dirspec.length()) {
-      int next = dirspec.indexOf('\t');
-      if (next >= 0) {
-        files->push_back(dirspec.substring(0, next));
-        dirspec = dirspec.substring(next+1);
-      } else {
-        files->push_back(dirspec);
-        break;
-      }
+void split(String in, char sep, std::vector<String> *out) {
+  while(in.length()) {
+    int next = in.indexOf(sep);
+    if (next >= 0) {
+      out->push_back(in.substring(0, next));
+      in = in.substring(next+1);
+    } else {
+      out->push_back(in);
+      break;
     }
   }
 }
 
+// tags.txt file format:
+// UID\t[FLAG1[;FLAG2[;FLAG3...]]]\tDIR1[;DIR2[;DIR3...]]
+void parseConfigLine(const String &line, std::vector<String> *options, std::vector<String> *files) {
+  int tab1 = line.indexOf('\t');
+  if (tab1 < 0) return;
+  int tab2 = line.indexOf('\t', tab1 + 1);
+  String config = line.substring(tab1+1, tab2);
+  split(config, ';', options);
+
+  // now parse files
+  if (tab2 < 0) return;
+  String dirspec = line.substring(tab2+1);
+  split(dirspec, ';', files);
+}
+
 void loadPlaylistForUid(String uid) {
   File tagmap = SD.open(TAGS_FILE);
+  // If there is no tags-file (yet), assign the current uid to be the "master control" tag, i.e. the one
+  // to enable wifi.
+  if (!tagmap) {
+    tagmap = SD.open(TAGS_FILE, FILE_WRITE);
+    tagmap.print(uid.c_str());
+    tagmap.println("\twifi\t");
+    tagmap.close();
+    tagmap = SD.open(TAGS_FILE);
+  }
+
+  // Look for a stored mapping of this tag to options / playlist
   std::vector<String> known_directories;
   while(tagmap && tagmap.available()) {
     String line = readLine(tagmap);
     Serial.println(line);
-    std::vector<String> dummy;
-    getFilesInLine(line, &dummy);
-    known_directories.insert(known_directories.end(), dummy.begin(), dummy.end());
+    std::vector<String> files, options;
+    parseConfigLine(line, &options, &files);
+    known_directories.insert(known_directories.end(), files.begin(), files.end());
 
     if (line.startsWith(uid)) {
       Serial.print("Tag uid has ");
-      Serial.print(dummy.size());
+      Serial.print(options.size());
+      Serial.print(" options and ");
+      Serial.print(files.size());
       Serial.println(" associated files");
-      state.list = Playlist(dummy);
+      state.list = Playlist(files);
+      for (unsigned int i = 0; i < options.size(); ++i) {
+        if (options[i] == "wifi") state.list.wifi_enabled = true;
+      }
       return;
     }
   }
@@ -270,11 +298,18 @@ void startOrResumePlaying() {
   if (controls.uid == state.uid) {  // resume previous
   } else {  // new tag
     loadPlaylistForUid(controls.uid);
-    startTrack(state.list.next());
+    nextTrack();
     state.uid = controls.uid;
   }
-  out->begin();
-  state.playing = true;
+
+  if (state.list.wifi_enabled) {
+    startWebInterface(true);
+  }
+
+  if (!state.finished) {
+    out->begin();
+    state.playing = true;
+  }
 }
 
 void nextTrack() {
@@ -284,18 +319,16 @@ void nextTrack() {
 void loop() {
   xSemaphoreTake(control_mutex, portMAX_DELAY);
   if (controls.haveTag()) {
-    if (!state.finished) {
-      if (!state.playing) {
-        startOrResumePlaying();
-      }
-      if (!mp3->loop()) {
-        nextTrack();
-      }
+    if (!state.playing) {
+      startOrResumePlaying();
+    } else if (!mp3->isRunning() || !mp3->loop()) {
+      nextTrack();
     }
   } else {
     if (state.playing) {
       stopPlaying();
     }
+    stopWebInterface();
   }
   xSemaphoreGive(control_mutex);
 }

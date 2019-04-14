@@ -31,6 +31,7 @@ public:
   Playlist() {
     current = -1;
     sublist = 0;
+    wifi_enabled = false;
   }
   Playlist(std::vector<String> items) : Playlist(){
     entries = items;
@@ -82,6 +83,8 @@ public:
 
     return ret;
   }
+
+  bool wifi_enabled;
 private:
   std::vector<String> entries;
   int current;
