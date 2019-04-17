@@ -34,7 +34,6 @@
 AudioFileSourceSD *file;
 AudioGeneratorMP3 *mp3;
 AudioFileSourceBuffer *buff;
-//AudioOutputBuffer *obuff;
 AudioOutput *out;
 
 SPIClass sdspi(HSPI);
@@ -44,6 +43,9 @@ File root;
 #define SS_PIN          5
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
+
+#define VOL_PIN  39
+#define VOL_THRESHOLD 100
 
 SemaphoreHandle_t control_mutex;
 void uiloop(void *);
@@ -62,7 +64,7 @@ void setup() {
 
   if (!SD.begin(15, sdspi)) {
     Serial.println("SD card initialization failed!");
-    return;
+    // TODO: Indicate error.
   }
 
   Serial.println("Hardware init complete");
@@ -71,9 +73,9 @@ void setup() {
   buff = new AudioFileSourceBuffer(file, 2048);
 
 //  out = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
-//  out->SetGain(.5);
+//  out = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
   out = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
-  //obuff = new AudioOutputBuffer(32600, out);
+//  out->SetGain(.8);
   mp3 = new AudioGeneratorMP3();
 
   control_mutex = xSemaphoreCreateMutex();
@@ -97,10 +99,12 @@ String uidToString(const MFRC522::Uid &uid) {
 }
 
 struct ControlsState {
+  ControlsState() { volume = 0; }
   String uid;
   bool haveTag() const {
     return (uid.length() > 0);
   }
+  int volume;
 } controls;
 
 struct PlayerState {
@@ -116,6 +120,8 @@ void uiloop(void *) {
   static int tag = 0;
   // keep a temporary copy of all control values, to keep mutex locking simple
   ControlsState controls_copy;
+  byte adc_count = 0;
+  int adc_sum = 0;
 
   while (true) {
     if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
@@ -132,6 +138,22 @@ void uiloop(void *) {
       if (--tag <= 0) {
         tag = 0;
         controls_copy.uid = String();
+      }
+    }
+
+    // Analog read is terribly noisy, and changing volume too often causes audio artefacts.
+    // Therefore, we average over 20 samples (the lazy way, no moving average), and then check wether the new value
+    // is more than a threshold value away from the previous reading.
+    if (adc_count < 20) {
+      ++adc_count;
+      adc_sum += analogRead(VOL_PIN);
+    } else {
+      int new_vol = adc_sum / adc_count;
+      adc_sum = 0;
+      adc_count = 0;
+      if ((controls_copy.volume > new_vol + VOL_THRESHOLD) || (controls_copy.volume < new_vol - VOL_THRESHOLD)) {
+        Serial.println(new_vol);
+        controls_copy.volume = new_vol;
       }
     }
 
@@ -317,8 +339,13 @@ void nextTrack() {
 }
 
 void loop() {
+  static int vol = controls.volume;
   xSemaphoreTake(control_mutex, portMAX_DELAY);
   if (controls.haveTag()) {
+    if (vol != controls.volume) {
+      vol = controls.volume;
+      out->SetGain(controls.volume / 2048.0);
+    }
     if (!state.playing) {
       startOrResumePlaying();
     } else if (!mp3->isRunning() || !mp3->loop()) {
