@@ -22,6 +22,7 @@
 #include <MFRC522.h>
 #include <SD.h>
 #include "Playlist.h"
+#include "Button.h"
 #include "WebInterface.h"  // optional!
 
 #include "AudioFileSourceSD.h"
@@ -46,7 +47,10 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 #define VOL_PIN  39
 #define VOL_THRESHOLD 100
+#define FORWARD_PIN 32
+#define REWIND_PIN 33
 
+Button<20, 500> b_forward, b_rewind;
 SemaphoreHandle_t control_mutex;
 void uiloop(void *);
 
@@ -57,7 +61,10 @@ void setup() {
   sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
   pinMode(5, OUTPUT); //VSPI CS
   pinMode(15, OUTPUT); //HSPI CS
-  stopWebInterface();
+  WiFi.mode(WIFI_OFF);
+
+  pinMode(FORWARD_PIN, INPUT_PULLUP);
+  pinMode(REWIND_PIN, INPUT_PULLUP);
 
 	mfrc522.PCD_Init();		// Init MFRC522
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
@@ -99,12 +106,19 @@ String uidToString(const MFRC522::Uid &uid) {
 }
 
 struct ControlsState {
-  ControlsState() { volume = 0; }
+  ControlsState() { volume = 0; navigation = None; }
   String uid;
   bool haveTag() const {
     return (uid.length() > 0);
   }
   int volume;
+  enum {
+    NextTrack,
+    PreviousTrack,
+    FastForward,
+    Rewind,
+    None
+  } navigation;
 } controls;
 
 struct PlayerState {
@@ -157,7 +171,18 @@ void uiloop(void *) {
       }
     }
 
+    // Read button states
+    b_forward.update(!digitalRead(FORWARD_PIN));
+    b_rewind.update(!digitalRead(REWIND_PIN));
+
     xSemaphoreTake(control_mutex, portMAX_DELAY);
+    // Much easier to handle clicks with mutex locked
+    controls_copy.navigation = controls.navigation;
+    if (b_forward.wasClicked()) controls_copy.navigation = ControlsState::NextTrack;
+    else if (b_forward.isHeld()) controls_copy.navigation = ControlsState::FastForward;
+    else if (b_rewind.wasClicked()) controls_copy.navigation = ControlsState::PreviousTrack;
+    else if (b_rewind.isHeld()) controls_copy.navigation = ControlsState::Rewind;
+
     controls = controls_copy;
     xSemaphoreGive(control_mutex);
 
@@ -174,6 +199,7 @@ void startTrack(String track) {
   Serial.print("starting new track: ");
   Serial.println(track);
 
+  if (mp3->isRunning()) mp3->stop();
   if (track.length() && file->open(track.c_str())) {
     buff->seek(0, SEEK_SET);
     mp3->begin(buff, out);
@@ -317,10 +343,10 @@ void loadPlaylistForUid(String uid) {
 }
 
 void startOrResumePlaying() {
-  if (controls.uid == state.uid) {  // resume previous
+  if (controls.uid == state.uid && !state.finished) {  // resume previous
   } else {  // new tag
     loadPlaylistForUid(controls.uid);
-    nextTrack();
+    startTrack(state.list.next());
     state.uid = controls.uid;
   }
 
@@ -334,8 +360,30 @@ void startOrResumePlaying() {
   }
 }
 
-void nextTrack() {
-  startTrack(state.list.next());
+void seek(float dir) {
+  out->stop();
+  // Crude heuristic for now: Always seek 1% of file size
+  // TOOD: Rather gather a short rate estimate, and then seek in aboslute time
+  int step = buff->getSize() / 100;
+  int pos = buff->getPos() + dir*step;
+  if (pos < 0) pos = 0;
+  if (pos >= buff->getSize()) pos = buff->getSize() - 1;
+  buff->seek(pos, SEEK_SET);
+
+  // What we do here:
+  // 1. insert a brief silence to avoid noise while the mp3-stream seeks to the next frame (well, this only works to a degree...)
+  // 2. play a brief sample a regular speed, a) For auditive feedback, b) as a defined rate-limit for the seeking
+  bool silenced = true;
+  uint32_t now = millis();
+  while(millis() - now < 120) {
+    if (silenced && (millis() - now > 27)) {  // NOTE: The *typical* mp3 frame legnth is 26.4ms
+      silenced = false;
+      out->begin();
+    }
+    if (!mp3->isRunning()) break;
+    mp3->loop();
+  }
+  if (silenced) out->begin();
 }
 
 void loop() {
@@ -348,8 +396,25 @@ void loop() {
     }
     if (!state.playing) {
       startOrResumePlaying();
-    } else if (!mp3->isRunning() || !mp3->loop()) {
-      nextTrack();
+    } else {
+      if (controls.navigation == ControlsState::None) {
+        if (!mp3->isRunning() || !mp3->loop()) {
+          startTrack(state.list.next());
+        }
+      } else {
+        if (controls.navigation == ControlsState::NextTrack) {
+          startTrack(state.list.next());
+        } else if (controls.navigation == ControlsState::PreviousTrack) {
+          String prev = state.list.previous();
+          if (prev.length() < 1) prev = state.list.next();  // no previous track: re-start first
+          startTrack(prev);
+        } else if (controls.navigation == ControlsState::FastForward) {
+          seek(.1);
+        } else {
+          seek(-.1);
+        }
+        controls.navigation = ControlsState::None;  // signal to ui thread that we have seen the button
+      }
     }
   } else {
     if (state.playing) {

@@ -84,8 +84,30 @@ public:
     return ret;
   }
 
+  String previous() {
+    if (sublist) {
+      String ret = sublist->previous();
+      if (ret.length() > 0) return ret;
+      // If we get here, sublist was depleted
+      delete sublist;
+      sublist = 0;
+    }
+
+    if (--current < 0) return String();
+
+    String ret = entries[current];
+    File f = SD.open(ret);
+    if (f.isDirectory()) {
+      sublist = new Playlist(f);
+      sublist->current = sublist->entries.size() - 1;
+      return previous();  // NOTE:  Calling on self, as the sublist _might_ be empty
+    }
+
+    return ret;
+  }
+
   bool wifi_enabled;
-private:
+protected:
   std::vector<String> entries;
   int current;
   Playlist *sublist;

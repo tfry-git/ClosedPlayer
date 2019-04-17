@@ -6,14 +6,14 @@ The key idea of the player is that tracks are selected simply by placing an RFID
 
 ## Status
 
-I've figured out the basic hardware setup. The software is not exactly useful, yet (although it does play MP3-files by RFID-tag, already). But I'll go with publish early, publish often, rather than uploading a finished product without development history.
+I've figured out the basic hardware setup. The software a bit sketchy, still (although the basics are in place, already). But I'll go with publish early, publish often, rather than uploading a finished product without development history.
 
 ## Design objctives
 
 Design objectives for this project. Many are not fulfilled, yet, but the chosen platform will allow all of the following:
 - Easy and intuitive to use
 - Buildable from cheap commonly available components
-- Managable without network access (and optionally with local network access)
+- Managable without network access (and optionally with local wireless network access)
 - Text-based / form-based configuration
 - Tinker-friendly
 - Low power consumptions and instant on
@@ -50,6 +50,10 @@ ESP32 to SD-Card:
 
 ESP32 to Amp (PDM output via I2S; alternatives available):
 - GPIO22 -> in
+
+Controls:
+- GPIO39 volume control (connect to a potentiomenter or to 3.3v)
+- GPIO32 and GPIO33: buttons, connect to ground; previous / next track (short press) - fast forward / rewind (long press)
 
 ### Libraries
 
