@@ -43,9 +43,8 @@ public:
     bool ret;
     if (mode == Interrupt) {
       ret = _out->ConsumeSample(sample);
-    } else if (mode == Silence) {
-      int16_t f_sample[2] = {0, 0};
-      ret = _out->ConsumeSample(f_sample);
+    } else if (mode == Swallow) {
+      ret = true; // Do not forward anything to output, i.e. consume the sample in "no" time
     } else {
       int16_t f_sample[2];
       // expensive floating point stuff needed while seeking, only
@@ -80,9 +79,9 @@ public:
     mode = FadeIn;
     fade_scale = _timeout;
   }
-  void setSilence(uint16_t duration) {
+  void setSwallow(uint16_t duration) {
     _timeout = duration;
-    mode = Silence;
+    mode = Swallow;
   }
   bool isSpecialModeActive() {
     return (mode != Normal);
@@ -92,6 +91,9 @@ public:
   void setSwallow(bool on) {
     swallow = on;
   } */
+  int getRate() {
+    return hertz;
+  }
 private:
   uint16_t _timeout;
   uint16_t fade_scale;
@@ -101,7 +103,7 @@ private:
     Interrupt,
     FadeIn,
     FadeOut,
-    Silence,
+    Swallow,
   } mode;
 };
 

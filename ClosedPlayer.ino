@@ -44,15 +44,7 @@ InterruptableOutput *out;
 SPIClass sdspi(HSPI);
 File root;
 
-#define RST_PIN         4
-#define SS_PIN          5
-
-MFRC522 mfrc522(SS_PIN, RST_PIN);
-
-#define VOL_PIN  39
-#define VOL_THRESHOLD 100
-#define FORWARD_PIN 32
-#define REWIND_PIN 33
+MFRC522 mfrc522(MFRC522_CS_PIN, MFRC522_RST_PIN);
 
 Button<20, 500> b_forward, b_rewind;
 SemaphoreHandle_t control_mutex;
@@ -62,9 +54,7 @@ void setup() {
   Serial.begin(38400);
 
   SPI.begin();			// Init SPI bus
-  sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
-  pinMode(5, OUTPUT); //VSPI CS
-  pinMode(15, OUTPUT); //HSPI CS
+  sdspi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN); // Separate SPI bus for SD card.
   WiFi.mode(WIFI_OFF);
 
   pinMode(FORWARD_PIN, INPUT_PULLUP);
@@ -371,32 +361,36 @@ void startOrResumePlaying() {
   }
 }
 
-void seek(float dir) {
+void seek(int dir) {
   // We're spending quite some time in this function, and don't need to check controls, so release the mutex
   xSemaphoreGive(control_mutex);
 
-  out->fadeOut(2000);
+  int timeconst = out->getRate() / 10;
+
+  // First, fade out the volume to avoid noise.
+  // While doing so, measure input consumption as a crude estimate for how far to seek.
+  uint32_t opos = buff->getPos();
+  out->fadeOut(timeconst);
+  while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
+  int32_t npos = buff->getPos();
+  int32_t delta = (npos - opos) * 32;
+  if (delta < 50) delta = buff->getSize() / 50;  // Fallback, if delta seems off
+  npos += delta * dir;
+  if (dir < 0) npos -= (timeconst*4 + 1152); // For rewind, substract the total size that we are playing forward during seek
+  if (npos < 0) npos = 0;
+  if (npos >= buff->getSize()) npos = buff->getSize() - 1;
+  buff->seek(npos, SEEK_SET);
+
+  // Insert a brief silence to avoid noise while the mp3-stream seeks to the next frame
+  out->setSwallow(1152);   // NOTE: The *typical* mp3 frame length is 1152
   while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
 
-  // Crude heuristic for now: Always seek 1% of file size
-  // TOOD: Rather gather a short rate estimate, and then seek in aboslute time
-  int step = buff->getSize() / 100;
-  int pos = buff->getPos() + dir*step;
-  if (pos < 0) pos = 0;
-  if (pos >= buff->getSize()) pos = buff->getSize() - 1;
-  buff->seek(pos, SEEK_SET);
-
-  // What we do here:
-  // 1. insert a brief silence to avoid noise while the mp3-stream seeks to the next frame (well, this only works to a degree...)
-  //    The reason why it does not work is probably that samples are not generated at exactly the output speed.
-  // 2. play a brief sample a regular speed, a) For auditive feedback, b) as a defined rate-limit for the seeking
-  out->setSilence(1152);   // NOTE: The *typical* mp3 frame length is 1152, *if* the mp3 sample rate is same as output sample rate.
+  // Fade in, again
+  out->fadeIn(timeconst);
   while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
 
-  out->fadeIn(2000);
-  while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
-
-  out->setTimeout(5000);   // Play a brief sample at regular volume and speed for auditive feedback
+  // Now play a brief sample a regular speed, a) For auditive feedback, b) as a defined rate-limit for the seeking
+  out->setTimeout(timeconst*2);   // Play a brief sample at regular volume and speed for auditive feedback
   while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
 
   xSemaphoreTake(control_mutex, portMAX_DELAY);
@@ -425,9 +419,9 @@ void loop() {
           if (prev.length() < 1) prev = state.list.next();  // no previous track: re-start first
           startTrack(prev);
         } else if (controls.navigation == ControlsState::FastForward) {
-          seek(.1);
+          seek(1);
         } else {
-          seek(-.1);
+          seek(-1);
         }
         controls.navigation = ControlsState::None;  // signal to ui thread that we have seen the button
       }
