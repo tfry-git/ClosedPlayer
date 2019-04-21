@@ -31,11 +31,13 @@
 #include "AudioGeneratorMP3.h"
 #include "AudioOutputI2SNoDAC.h"
 #include "AudioOutputI2S.h"
+#include "InterruptableOutput.h"
 
 AudioFileSourceSD *file;
 AudioGeneratorMP3 *mp3;
 AudioFileSourceBuffer *buff;
-AudioOutput *out;
+AudioOutput *realout;
+InterruptableOutput *out;
 
 SPIClass sdspi(HSPI);
 File root;
@@ -79,10 +81,11 @@ void setup() {
   file = new AudioFileSourceSD();
   buff = new AudioFileSourceBuffer(file, 2048);
 
-//  out = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
-//  out = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
-  out = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
-//  out->SetGain(.8);
+//  realout = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
+  realout = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
+//  realout = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
+
+  out = new InterruptableOutput(realout);
   mp3 = new AudioGeneratorMP3();
 
   control_mutex = xSemaphoreCreateMutex();
@@ -361,7 +364,12 @@ void startOrResumePlaying() {
 }
 
 void seek(float dir) {
-  out->stop();
+  // We're spending quite some time in this function, and don't need to check controls, so release the mutex
+  xSemaphoreGive(control_mutex);
+
+  out->fadeOut(2000);
+  while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
+
   // Crude heuristic for now: Always seek 1% of file size
   // TOOD: Rather gather a short rate estimate, and then seek in aboslute time
   int step = buff->getSize() / 100;
@@ -372,18 +380,18 @@ void seek(float dir) {
 
   // What we do here:
   // 1. insert a brief silence to avoid noise while the mp3-stream seeks to the next frame (well, this only works to a degree...)
+  //    The reason why it does not work is probably that samples are not generated at exactly the output speed.
   // 2. play a brief sample a regular speed, a) For auditive feedback, b) as a defined rate-limit for the seeking
-  bool silenced = true;
-  uint32_t now = millis();
-  while(millis() - now < 120) {
-    if (silenced && (millis() - now > 27)) {  // NOTE: The *typical* mp3 frame legnth is 26.4ms
-      silenced = false;
-      out->begin();
-    }
-    if (!mp3->isRunning()) break;
-    mp3->loop();
-  }
-  if (silenced) out->begin();
+  out->setSilence(1152);   // NOTE: The *typical* mp3 frame length is 1152, *if* the mp3 sample rate is same as output sample rate.
+  while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
+
+  out->fadeIn(2000);
+  while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
+
+  out->setTimeout(5000);   // Play a brief sample at regular volume and speed for auditive feedback
+  while (out->isSpecialModeActive() && mp3->isRunning()) mp3->loop();
+
+  xSemaphoreTake(control_mutex, portMAX_DELAY);
 }
 
 void loop() {
