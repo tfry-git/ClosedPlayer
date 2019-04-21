@@ -82,8 +82,8 @@ void setup() {
   buff = new AudioFileSourceBuffer(file, 2048);
 
 //  realout = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
-  realout = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
-//  realout = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
+//  realout = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
+  realout = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
 
   out = new InterruptableOutput(realout);
   mp3 = new AudioGeneratorMP3();
