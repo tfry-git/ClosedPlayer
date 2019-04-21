@@ -33,6 +33,8 @@
 #include "AudioOutputI2S.h"
 #include "InterruptableOutput.h"
 
+#include "config.h"
+
 AudioFileSourceSD *file;
 AudioGeneratorMP3 *mp3;
 AudioFileSourceBuffer *buff;
@@ -57,9 +59,9 @@ SemaphoreHandle_t control_mutex;
 void uiloop(void *);
 
 void setup() {
-	Serial.begin(38400);
+  Serial.begin(38400);
 
-	SPI.begin();			// Init SPI bus
+  SPI.begin();			// Init SPI bus
   sdspi.begin(14, 13, 27, 15); // Separate SPI bus for SD card. Note that these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
   pinMode(5, OUTPUT); //VSPI CS
   pinMode(15, OUTPUT); //HSPI CS
@@ -68,8 +70,8 @@ void setup() {
   pinMode(FORWARD_PIN, INPUT_PULLUP);
   pinMode(REWIND_PIN, INPUT_PULLUP);
 
-	mfrc522.PCD_Init();		// Init MFRC522
-	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
+  mfrc522.PCD_Init();		// Init MFRC522
+  mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
 
   if (!SD.begin(15, sdspi)) {
     Serial.println("SD card initialization failed!");
@@ -81,9 +83,15 @@ void setup() {
   file = new AudioFileSourceSD();
   buff = new AudioFileSourceBuffer(file, 2048);
 
-//  realout = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
-//  realout = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
+#if defined(OUTPUT_NO_DAC)
   realout = new AudioOutputI2SNoDAC(); // Output as PDM via I2S: pin 22
+#elif defined(OUTPUT_INTERNAL_DAC)
+  realout = new AudioOutputI2S(0, true); // Output via internal DAC: pins 25 and 26
+#elif defined(OUTPUT_I2S_DAC)
+  realout = new AudioOutputI2S(); // Output via external I2S DAC: pins 25, 26, and 22
+#else
+#error No output mode defined in config.h
+#endif
 
   out = new InterruptableOutput(realout);
   mp3 = new AudioGeneratorMP3();
