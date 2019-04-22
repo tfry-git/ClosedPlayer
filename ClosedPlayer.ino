@@ -24,6 +24,7 @@
 #include "Playlist.h"
 #include "Button.h"
 #include "WebInterface.h"  // optional!
+#include "StatusIndicator.h"
 
 #include "AudioFileSourceSD.h"
 #include "AudioFileSourceBuffer.h"
@@ -187,6 +188,7 @@ void uiloop(void *) {
     controls = controls_copy;
     xSemaphoreGive(control_mutex);
 
+    indicator.update();
     vTaskDelay (10);
   }
 }
@@ -194,6 +196,7 @@ void uiloop(void *) {
 void stopPlaying() {
   out->stop();
   state.playing = false;
+  indicator.setPermanentStatus(StatusIndicator::Playing, false);
 }
 
 void startTrack(String track) {
@@ -209,6 +212,7 @@ void startTrack(String track) {
     Serial.print("Empty track. stopping...");
     stopPlaying();
     state.finished = true;
+    indicator.setTransientStatus(StatusIndicator::AtFileEOF);
     Serial.println(" stopped.");
   }
 }
@@ -344,7 +348,13 @@ void loadPlaylistForUid(String uid) {
 }
 
 void startOrResumePlaying() {
-  if (controls.uid == state.uid && !state.finished) {  // resume previous
+  if (controls.uid == state.uid) {  // resume previous
+    if (state.finished) {  // special case, if play was at end, and we remove / re-add tag: Start over
+      if (!state.list.isEmpty()) {
+        state.list.reset();
+        startTrack(state.list.next());
+      }
+    }
   } else {  // new tag
     loadPlaylistForUid(controls.uid);
     startTrack(state.list.next());
@@ -358,6 +368,7 @@ void startOrResumePlaying() {
   if (!state.finished) {
     out->begin();
     state.playing = true;
+    indicator.setPermanentStatus(StatusIndicator::Playing);
   }
 }
 
@@ -377,8 +388,14 @@ void seek(int dir) {
   if (delta < 50) delta = buff->getSize() / 50;  // Fallback, if delta seems off
   npos += delta * dir;
   if (dir < 0) npos -= (timeconst*4 + 1152); // For rewind, substract the total size that we are playing forward during seek
-  if (npos < 0) npos = 0;
-  if (npos >= buff->getSize()) npos = buff->getSize() - 1;
+  if (npos < 0) {
+    indicator.setTransientStatus(StatusIndicator::AtFileEOF);
+    npos = 0;
+  }
+  if (npos >= buff->getSize()) {
+    indicator.setTransientStatus(StatusIndicator::AtFileEOF);
+    npos = buff->getSize() - 1;
+  }
   buff->seek(npos, SEEK_SET);
 
   // Insert a brief silence to avoid noise while the mp3-stream seeks to the next frame
@@ -409,6 +426,7 @@ void loop() {
     } else {
       if (controls.navigation == ControlsState::None) {
         if (!mp3->isRunning() || !mp3->loop()) {
+          indicator.setTransientStatus(StatusIndicator::AtFileEOF);
           startTrack(state.list.next());
         }
       } else {

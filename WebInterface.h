@@ -29,6 +29,7 @@ char bitsToHex(byte bits);
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFi.h>
+#include "StatusIndicator.h"
 
 AsyncWebServer *server = 0;
 
@@ -93,6 +94,7 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
 
   // On root ("/?path=XYZ") show a listing of files at the given path
   server->on("/", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    indicator.setTransientStatus(StatusIndicator::WIFIActivity);
     String path = "/";
     if (request->hasParam("path")) path = request->getParam("path")->value();
     String backpath;
@@ -135,6 +137,7 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     }
   });
   server->on("/mkdir", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    indicator.setTransientStatus(StatusIndicator::WIFIActivity);
     String path = "/";
     if (request->hasParam("parent")) path = request->getParam("parent")->value();
     if (request->hasParam("dir")) {
@@ -146,6 +149,7 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     request->send(200, "text/html", backPage("<h1>Directory created</h1>").c_str());
   });
   server->on("/rm", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    indicator.setTransientStatus(StatusIndicator::WIFIActivity);
     String path;
     if (request->hasParam("path")) path = request->getParam("path")->value();
     if (path.length() < 1) return;
@@ -155,6 +159,7 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
   server->on("/put", HTTP_POST, [] (AsyncWebServerRequest *request) {
     request->send(200);
   }, [] (AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    indicator.setTransientStatus(StatusIndicator::WIFIActivity);
     static File out;
     if(!index) {
       if (out) out.close();
@@ -179,6 +184,8 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     }
   });
   server->begin();
+
+  indicator.setPermanentStatus(StatusIndicator::WIFIEnabled);
 }
 
 void stopWebInterface() {
@@ -187,6 +194,7 @@ void stopWebInterface() {
   server = 0;
   WiFi.mode(WIFI_OFF);
   Serial.println("WIFI stopped");
+  indicator.setPermanentStatus(StatusIndicator::WIFIEnabled, false);
 }
 
 #endif

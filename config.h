@@ -49,5 +49,14 @@
 #define FORWARD_PIN            32  // Forward button. INPUT_PULLUP, i.e. button should connect to ground
 #define REWIND_PIN             33  // REWIND button. INPUT_PULLUP, i.e. button should connect to ground
 
+// Status indicator
+#define LED_BLUE_PIN           21
+#define LED_GREEN_PIN          17
+#define LED_RED_PIN            16
+
+// Power management
+#define BAT_SENSE_PIN          36
+#define POWER_CONTROL_PIN      12
+
 #endif
 

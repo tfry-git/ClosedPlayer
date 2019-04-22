@@ -55,6 +55,11 @@ Controls:
 - GPIO39 volume control (connect to a potentiomenter or to 3.3v)
 - GPIO32 and GPIO33: buttons, connect to ground; previous / next track (short press) - fast forward / rewind (long press)
 
+RGB-Status LED (optional; common kathode):
+- GPIO-21 -> Blue (lights if WIFI enabled, blinks on WIFI activity)
+- GPIO-17 -> Green (lights while playing, blinks while idle)
+- GPIO-16 -> Red (indicates error states)
+
 ### Libraries
 
 - RFID library (https://github.com/miguelbalboa/rfid)

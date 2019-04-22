@@ -106,6 +106,18 @@ public:
     return ret;
   }
 
+  bool isEmpty () const {
+    return entries.size() > 0;
+  }
+
+  void reset () {
+    if (sublist) {
+      delete sublist;
+      sublist = 0;
+    }
+    current = -1;
+  }
+
   bool wifi_enabled;
 protected:
   std::vector<String> entries;
