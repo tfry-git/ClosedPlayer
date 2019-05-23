@@ -24,6 +24,8 @@
 
 #include "config.h"
 
+#define CHANNEL_LED_GREEN 0
+
 class StatusIndicator {
 public:
   StatusIndicator() {
@@ -33,6 +35,8 @@ public:
     pinMode(LED_BLUE_PIN, OUTPUT);
     pinMode(LED_GREEN_PIN, OUTPUT);
     pinMode(LED_RED_PIN, OUTPUT);
+    ledcSetup(CHANNEL_LED_GREEN, 5000, 8);
+    ledcAttachPin(LED_GREEN_PIN, CHANNEL_LED_GREEN);
   };
   enum StatusBits {
     WIFIEnabled  = 1,
@@ -73,12 +77,11 @@ public:
 
     uint16_t error_bits = bits & (Error | AtFileEOF);
     if ((bits & Playing) && !error_bits) {
-      digitalWrite(LED_GREEN_PIN, true);
+      ledcWrite(CHANNEL_LED_GREEN, 255);
     } else if (isIdle()) {
-      //analogWrite(LED_GREEN_PIN, abs(((now / 10) % 512) - 256));
-      digitalWrite(LED_GREEN_PIN, (now / 2000) % 2);
+      ledcWrite(CHANNEL_LED_GREEN, abs(((now / 10) % 400) - 200) + 10);  // NOTE: Max brightness 210, min brightness 10. Looks better than 0...255
     } else {
-      digitalWrite(LED_GREEN_PIN, false);
+      ledcWrite(CHANNEL_LED_GREEN, 0);
     }
   }
   // Set a status bit that will be clearer, automatically, after 500ms

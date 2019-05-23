@@ -42,6 +42,9 @@ AudioFileSourceBuffer *buff;
 AudioOutput *realout;
 InterruptableOutput *out;
 
+const char resumefile[] = "/resume.txt";
+void resumeSession();
+
 SPIClass sdspi(HSPI);
 File root;
 
@@ -52,11 +55,15 @@ SemaphoreHandle_t control_mutex;
 void uiloop(void *);
 
 void setup() {
+  pinMode(POWER_CONTROL_PIN, OUTPUT);
+  digitalWrite(POWER_CONTROL_PIN, true);
+
   Serial.begin(38400);
 
   SPI.begin();			// Init SPI bus
   sdspi.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN); // Separate SPI bus for SD card.
   WiFi.mode(WIFI_OFF);
+  btStop();
 
   pinMode(FORWARD_PIN, INPUT_PULLUP);
   pinMode(REWIND_PIN, INPUT_PULLUP);
@@ -66,7 +73,7 @@ void setup() {
 
   if (!SD.begin(15, sdspi)) {
     Serial.println("SD card initialization failed!");
-    // TODO: Indicate error.
+    indicator.setPermanentStatus(StatusIndicator::Error);
   }
 
   Serial.println("Hardware init complete");
@@ -86,6 +93,10 @@ void setup() {
 
   out = new InterruptableOutput(realout);
   mp3 = new AudioGeneratorMP3();
+
+  if (SD.exists(resumefile)) {
+    resumeSession();
+  }
 
   control_mutex = xSemaphoreCreateMutex();
   // Handle controls in separate task. Esp. reading RFID tags takes too long, causes hickups in the playback, if used in the same thread.
@@ -124,13 +135,50 @@ struct ControlsState {
 } controls;
 
 struct PlayerState {
-  PlayerState() { finished = false; playing = false; };
+  PlayerState() { finished = false; playing = false; idle_since = 0; };
   File folder;
   String uid;
   bool finished;
   bool playing;
   Playlist list;
+  uint32_t idle_since;
 } state;
+
+#include <esp_wifi.h>
+void doShutdown() {
+  stopPlaying();
+  Serial.println("Shutting down");
+  if (!state.finished) {
+    File f = SD.open(resumefile, FILE_WRITE);
+    if (f) {
+      f.println(state.uid);
+      f.println(state.list.serialize());  // position in playlist
+      f.println(buff->getPos());          // position in track
+    }
+    f.close();
+  } else {
+    SD.remove(resumefile);
+  }
+  digitalWrite(POWER_CONTROL_PIN, LOW);
+  // actually, we *should* not reach any of the lines below, but possibly the power control pin is not connected, so let's try to minimize consumption, at least
+  delay(1000);
+  esp_wifi_stop();
+  esp_deep_sleep_start();
+}
+
+// resume session after power down
+void resumeSession() {
+  File f = SD.open(resumefile);
+  if (!f) return;
+  state.uid = readLine(f);
+  loadPlaylistForUid(state.uid);
+  std::vector<String> positions;
+  split(readLine(f), ',', &positions);
+  state.list.unserialize(positions);
+  startTrack(state.list.getCurrent());
+  buff->seek(readLine(f).toInt(), SEEK_SET);
+  stopPlaying();
+}
 
 void uiloop(void *) {
   static int tag = 0;
@@ -138,6 +186,7 @@ void uiloop(void *) {
   ControlsState controls_copy;
   byte adc_count = 0;
   int adc_sum = 0;
+  int adc_pin = VOL_PIN;
 
   while (true) {
     if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
@@ -158,18 +207,32 @@ void uiloop(void *) {
     }
 
     // Analog read is terribly noisy, and changing volume too often causes audio artefacts.
-    // Therefore, we average over 20 samples (the lazy way, no moving average), and then check wether the new value
+    // Therefore, we average over 10 samples (the lazy way, no moving average), and then check wether the new value
     // is more than a threshold value away from the previous reading.
-    if (adc_count < 20) {
+    if (adc_count < 10) {
       ++adc_count;
-      adc_sum += analogRead(VOL_PIN);
+      adc_sum += analogRead(adc_pin);
     } else {
-      int new_vol = adc_sum / adc_count;
+      int adc_readout = adc_sum / adc_count;
       adc_sum = 0;
       adc_count = 0;
-      if ((controls_copy.volume > new_vol + VOL_THRESHOLD) || (controls_copy.volume < new_vol - VOL_THRESHOLD)) {
-        Serial.println(new_vol);
-        controls_copy.volume = new_vol;
+      if (adc_pin == VOL_PIN) {
+        if ((controls_copy.volume > adc_readout + VOL_THRESHOLD) || (controls_copy.volume < adc_readout - VOL_THRESHOLD)) {
+          Serial.println(adc_readout);
+          controls_copy.volume = adc_readout;
+        }
+        adc_pin = BAT_SENSE_PIN;
+      } else {
+//        Serial.println(adc_readout);
+        if (adc_readout <= BAT_WARN_THRESHOLD) {
+          indicator.setPermanentStatus(StatusIndicator::BatteryLow);
+          if (adc_readout < BAT_CUTOUT_THRESHOLD) {
+        //    doShutdown();
+          }
+        } else if (adc_readout >= BAT_WARN_RELEASE) {
+          indicator.setPermanentStatus(StatusIndicator::BatteryLow, false);
+        }
+        adc_pin = VOL_PIN;
       }
     }
 
@@ -197,6 +260,7 @@ void stopPlaying() {
   out->stop();
   state.playing = false;
   indicator.setPermanentStatus(StatusIndicator::Playing, false);
+  if (!isWebInterfaceActive()) state.idle_since = millis();
 }
 
 void startTrack(String track) {
@@ -419,7 +483,7 @@ void loop() {
   if (controls.haveTag()) {
     if (vol != controls.volume) {
       vol = controls.volume;
-      out->SetGain(controls.volume / 2048.0);
+      realout->SetGain(2.0 - (controls.volume / 2048.0));
     }
     if (!state.playing) {
       startOrResumePlaying();
@@ -451,5 +515,10 @@ void loop() {
     stopWebInterface();
   }
   xSemaphoreGive(control_mutex);
+  if (!state.playing) {
+    if ((millis() - state.idle_since) > (IDLE_SHUTDOWN_TIMEOUT * 1000UL)) {
+      doShutdown();
+    }
+  }
 }
 

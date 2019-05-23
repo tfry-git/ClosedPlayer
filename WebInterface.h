@@ -32,6 +32,7 @@ char bitsToHex(byte bits);
 #include "StatusIndicator.h"
 
 AsyncWebServer *server = 0;
+bool isWebInterfaceActive() { return server; };
 
 String urlencode(String in) {
   String ret;

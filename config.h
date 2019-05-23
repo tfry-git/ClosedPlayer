@@ -38,14 +38,14 @@
 #define MFRC522_CS_PIN          5
 
 // SD card. This needs to be on a separate SPI bus, as transactions with the RFID reader take too long for decent playback.
-// Could be remapped to other pins, and in fact there are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
+// Could be remapped to other pins, and in fact, these are not - quite - the standard pins. I had trouble uploading new code, while using the default pins
 #define SD_SCK_PIN             14
 #define SD_MISO_PIN            13
 #define SD_MOSI_PIN            27
 #define SD_CS_PIN              15
 
 #define VOL_PIN                39  // Volume control. 0...3.3v
-#define VOL_THRESHOLD         100  // Volume control change sensitivity
+#define VOL_THRESHOLD          60  // Volume control change sensitivity
 #define FORWARD_PIN            32  // Forward button. INPUT_PULLUP, i.e. button should connect to ground
 #define REWIND_PIN             33  // REWIND button. INPUT_PULLUP, i.e. button should connect to ground
 
@@ -57,6 +57,13 @@
 // Power management
 #define BAT_SENSE_PIN          36
 #define POWER_CONTROL_PIN      12
+#define BAT_WARN_THRESHOLD   ((int) (4096 * (3.15 / 2) / 3.3)) // You may want to determine the best value, empirically, but the idea is that the bat sense pin is connected to
+                                                               // the battery voltage (after power control mosfet) via a 50/50 voltage divider. Then the warning will trigger around 3.4 (3.15 in my circuit)
+                                                               // volts divided by 2.
+#define BAT_WARN_RELEASE     (BAT_WARN_THRESHOLD + 100)  // Release value for battery low warning. A little higher than the warning threshold to avoid flicker
+#define BAT_CUTOUT_THRESHOLD ((int) (4096 * (2.95 / 2) / 3.3))  // See above for details. Cut out around 3.1 (2.95 in my circuit) volts to protect the battery.
+
+#define IDLE_SHUTDOWN_TIMEOUT 120  // Cut the power after this many seconds of being idle (no card present, or finished playing)
 
 #endif
 

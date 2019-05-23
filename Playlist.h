@@ -106,16 +106,42 @@ public:
     return ret;
   }
 
-  bool isEmpty () const {
-    return entries.size() > 0;
+  String getCurrent() const {
+    if (sublist) return sublist->getCurrent();
+    if (current < 0 || isEmpty()) return String();
+    return entries[current];
   }
 
-  void reset () {
+  bool isEmpty() const {
+    return entries.size() < 1;
+  }
+
+  void reset() {
     if (sublist) {
       delete sublist;
       sublist = 0;
     }
     current = -1;
+  }
+
+  String serialize() const {
+    String ret = String(current);
+    if (sublist) {
+      ret += ",";
+      ret += sublist->serialize();
+    }
+    return ret;
+  }
+
+  void unserialize(std::vector<String> positions) {
+    if(positions.size() < 1) return;
+    int pos = positions[0].toInt();
+    current = pos - 1;
+    next();
+    if (sublist) {
+      positions.erase(positions.begin(), positions.begin() + 1);
+      sublist->unserialize(positions);
+    }
   }
 
   bool wifi_enabled;
