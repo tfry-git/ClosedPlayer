@@ -131,7 +131,8 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
         }
         response->print("</table>\n");
         response->printf("<form action=\"/mkdir\">Create subdir: <input type=\"text\" name=\"dir\"><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Create\"></form>\n", path.c_str());
-        response->printf("<form action=\"/put\" method=\"POST\" enctype=\"multipart/form-data\">Upload: <input type=\"file\" name=\"file\" multiple webkitdirectory><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Upload\"></form>\n", path.c_str());
+        // cannot easily pass the parent dir via post, for some reason
+        response->printf("<form action=\"/put?parent=%s\" method=\"POST\" enctype=\"multipart/form-data\">Upload: <input type=\"file\" name=\"file\" multiple webkitdirectory><input type=\"submit\" value=\"Upload\"></form>\n", urlencode(path).c_str());
         response->print(htmlfoot);
         request->send(response);
       }
@@ -166,11 +167,15 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
       if (out) out.close();
       String dir = "/";
       if (request->hasParam("parent")) dir = request->getParam("parent")->value();
+      else Serial.println("no upload dir specified");
+      if (!dir.endsWith("/")) dir += "/";
       int slashpos = filename.lastIndexOf("/");
       if (slashpos > 0) {
-        dir += "/" + filename.substring(0, slashpos);
+        dir += filename.substring(0, slashpos);
         SD.mkdir(dir);
         filename = dir + filename.substring(slashpos); // includes the slash itself
+      } else {
+        filename = dir + filename;
       }
       if (SD.exists(filename)) SD.remove(filename);
       out = SD.open(filename, FILE_WRITE);

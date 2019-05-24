@@ -187,6 +187,8 @@ void uiloop(void *) {
   byte adc_count = 0;
   int adc_sum = 0;
   int adc_pin = VOL_PIN;
+  uint32_t init_delay = millis();
+  if (!init_delay) init_delay = 1;
 
   while (true) {
     if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
@@ -227,7 +229,7 @@ void uiloop(void *) {
         if (adc_readout <= BAT_WARN_THRESHOLD) {
           indicator.setPermanentStatus(StatusIndicator::BatteryLow);
           if (adc_readout < BAT_CUTOUT_THRESHOLD) {
-        //    doShutdown();
+            doShutdown();
           }
         } else if (adc_readout >= BAT_WARN_RELEASE) {
           indicator.setPermanentStatus(StatusIndicator::BatteryLow, false);
@@ -236,9 +238,14 @@ void uiloop(void *) {
       }
     }
 
-    // Read button states
-    b_forward.update(!digitalRead(FORWARD_PIN));
-    b_rewind.update(!digitalRead(REWIND_PIN));
+    if (!init_delay) {
+      // Read button states
+      b_forward.update(!digitalRead(FORWARD_PIN));
+      b_rewind.update(!digitalRead(REWIND_PIN));
+    } else {
+      // skip reading button states for a brief time, intially. A button may have been pressed to turn on the device.
+      if (millis() - init_delay > 2000) init_delay = 0;
+    }
 
     xSemaphoreTake(control_mutex, portMAX_DELAY);
     // Much easier to handle clicks with mutex locked
@@ -267,6 +274,7 @@ void startTrack(String track) {
   Serial.print("starting new track: ");
   Serial.println(track);
 
+  state.idle_since = 0;
   if (mp3->isRunning()) mp3->stop();
   if (track.length() && file->open(track.c_str())) {
     buff->seek(0, SEEK_SET);
@@ -515,9 +523,11 @@ void loop() {
     stopWebInterface();
   }
   xSemaphoreGive(control_mutex);
-  if (!state.playing) {
-    if ((millis() - state.idle_since) > (IDLE_SHUTDOWN_TIMEOUT * 1000UL)) {
-      doShutdown();
+  if (!state.playing && !isWebInterfaceActive()) {
+    if (state.idle_since) {
+      if ((millis() - state.idle_since) > (IDLE_SHUTDOWN_TIMEOUT * 1000UL)) {
+        doShutdown();
+      }
     }
   }
 }

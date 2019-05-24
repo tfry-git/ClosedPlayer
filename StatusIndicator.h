@@ -79,7 +79,7 @@ public:
     if ((bits & Playing) && !error_bits) {
       ledcWrite(CHANNEL_LED_GREEN, 255);
     } else if (isIdle()) {
-      ledcWrite(CHANNEL_LED_GREEN, abs(((now / 10) % 400) - 200) + 10);  // NOTE: Max brightness 210, min brightness 10. Looks better than 0...255
+      ledcWrite(CHANNEL_LED_GREEN, abs(((now / 12) % 320) - 160) + 10);  // NOTE: Max brightness 170, min brightness 10. Looks better than 0...255
     } else {
       ledcWrite(CHANNEL_LED_GREEN, 0);
     }
