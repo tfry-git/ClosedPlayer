@@ -102,7 +102,7 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
     String cur = "ROOT";
     int pos = 1;
     while (pos < path.length()) {
-      backpath += "/<a href=\"/?path=" + urlencode(path.substring(0, pos)) + "\">" + cur + "</a>";
+      backpath += "/<a href=\"/?path=" + urlencode(path.substring(0, (pos == 1) ? 1 : (pos - 1))) + "\">" + cur + "</a>";
       int next = path.indexOf("/", pos);
       if (next < 0) {
         backpath += "/" + path.substring(pos);
@@ -132,7 +132,8 @@ void startWebInterface(bool access_point, const char* sess_id, const char *sess_
         response->print("</table>\n");
         response->printf("<form action=\"/mkdir\">Create subdir: <input type=\"text\" name=\"dir\"><input type=\"hidden\" name=\"parent\" value=\"%s\"><input type=\"submit\" value=\"Create\"></form>\n", path.c_str());
         // cannot easily pass the parent dir via post, for some reason
-        response->printf("<form action=\"/put?parent=%s\" method=\"POST\" enctype=\"multipart/form-data\">Upload: <input type=\"file\" name=\"file\" multiple webkitdirectory><input type=\"submit\" value=\"Upload\"></form>\n", urlencode(path).c_str());
+        response->printf("<form action=\"/put?parent=%s\" method=\"POST\" enctype=\"multipart/form-data\">Upload Directory: <input type=\"file\" name=\"file\" multiple webkitdirectory><input type=\"submit\" value=\"Upload\"></form>\n", urlencode(path).c_str());
+        response->printf("<form action=\"/put?parent=%s\" method=\"POST\" enctype=\"multipart/form-data\">Upload File: <input type=\"file\" name=\"file\"><input type=\"submit\" value=\"Upload\"></form>\n", urlencode(path).c_str());
         response->print(htmlfoot);
         request->send(response);
       }
