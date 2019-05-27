@@ -1,32 +1,41 @@
 # The Closed Player
 
-This project - still in early development - is an effort to create a very easy to use mp3 player for kids, based on open source and readily available cheap components (in short: an ESP32, an RFID module, an SD-card reader, an amplifier and a speaker).
+This project is an effort to create a very easy to use mp3 player for kids, based on open source and readily available cheap components (in short: an ESP32, an RFID module, an SD-card reader, an amplifier and a speaker).
 
 The key idea of the player is that tracks are selected simply by placing an RFID-tagged object on / next to the player, thus creating a physical key to a file, rather than having to navigate complex menus.
 
 ## Status
 
-I've figured out the basic hardware setup. The software a bit sketchy, still (although the basics are in place, already). But I'll go with publish early, publish often, rather than uploading a finished product without development history.
+The project is functional, and I have turned it into a birthday gift, usuccessfully. However, I'll admit there are some rough edges left to address, esp. in the "administrative backend": Importantly uploading tracks, and making non-standard links to tags over wifi works, but is not a pretty sight. Also, documentation is still fairly rough, too, so you should not be a complete novice to ESP32, or willing to read on your own. Further, some obvious features such as shuffle / loop / equalizer are still missing.
 
 ## Design objctives
 
-Design objectives for this project. Many are not fulfilled, yet, but the chosen platform will allow all of the following:
+Design objectives for this project:
 - Easy and intuitive to use
 - Buildable from cheap commonly available components
 - Managable without network access (and optionally with local wireless network access)
-- Text-based / form-based configuration
+- Text-based / form-based configuration - Note: Only text based configuration is currently implemented, and not feature complete
 - Tinker-friendly
-- Low power consumptions and instant on
+- Low power consumptions and instant on - Note: Boot time about half a second
 - Ability to resume anywhere in a track
 - Ability for basic seek
 
 ## Building the project
 
-### Hardware
+### Libraries
+- RFID library (https://github.com/miguelbalboa/rfid)
+- ESP8266Audio (https://github.com/earlephilhower/ESP8266Audio)
+  - This library can do much more than just MP3 decoding, so if you need other formats that should be really easy to add!
+- ESP8266Audio's unneccessary dependency ESP8266_Spiram (https://github.com/Gianbacchio/ESP8266_Spiram)
+
+### Building the "essential" version
+You can start with a trimmed down version, to find out, wether this is the right project for you, and then work your way from there:
+
+#### Hardware
 - ESP32 dev board (should not matter which one)
 - RFID-RC522 card reader. Readily available at the time of this writing, but easy to replace by similar modules
 - 3.3V SD card reader (purely passive component, readily available)
-- Audio amplifier and speaker
+- some croc-clamps to connect a headphone
 
 ### Wiring
 
@@ -48,24 +57,38 @@ ESP32 to SD-Card:
 - GPIO27 -> MOSI
 - GPIO15 -> CS
 
-ESP32 to Amp (PDM output via I2S; alternatives available):
+ESP32 to Headphone (PDM output via I2S; alternatives available):
 - GPIO22 -> in
+- Gnd -> Gnd
 
+Dummy:
+- GPIO39 -> Gnd (for max volume) or VCC/2 (for normal volume)
+
+### Building the "full" version
+
+#### Additional hardware
+- An I2S DAC (e.g. PT8211)
+- Audio amplifier - Note: There are some modules sporting an I2S DAC *and* amplifier. Consider those, if you want an easy solution.
+- Speaker
+- Two buttons
+- A potentionmeter 50k or so, logarithmic is best but not required
+- An RGB-LED
+- Battery, and probably voltage booster, e.g. a powerbank circuit
+- Power management circuit (description to follow, essentially some diodes, NPN, P-FET, resistors)
+
+### Additional wiring
 Controls:
-- GPIO39 volume control (connect to a potentiomenter or to 3.3v)
+- GPIO39 volume control (connect to a potentiomenter from 0 to 3.3v)
 - GPIO32 and GPIO33: buttons, connect to ground; previous / next track (short press) - fast forward / rewind (long press)
 
-RGB-Status LED (optional; common kathode):
-- GPIO-21 -> Blue (lights if WIFI enabled, blinks on WIFI activity)
-- GPIO-17 -> Green (lights while playing, blinks while idle)
-- GPIO-16 -> Red (indicates error states)
+RGB-Status LED (common kathode, add resistors as required):
+- GPIO21 -> Blue (lights if WIFI enabled, blinks on WIFI activity)
+- GPIO17 -> Green (lights while playing, blinks while idle)
+- GPIO16 -> Red (indicates error states, low battery)
 
-### Libraries
-
-- RFID library (https://github.com/miguelbalboa/rfid)
-- ESP8266Audio (https://github.com/earlephilhower/ESP8266Audio)
-  - This library can do much more than just MP3 decoding, so if you need other formats that should be really easy to add!
-- ESP8266Audio's unneccessary dependency ESP8266_Spiram (https://github.com/Gianbacchio/ESP8266_Spiram)
+Power:
+- GPIO39 -> Connected to battery voltage for sensing battery state. **Be sure to limit the voltage range**, e.g. using a voltage divider. You may also have to adjust the margins in config.h. If you want to skip this, connect to 3.3v.
+- GPIO12 -> Goes high, when power should be on, goes low to shut down.
 
 ## Basic operation
 
@@ -73,15 +96,15 @@ RGB-Status LED (optional; common kathode):
 - The first RFID tag scanned by the reader will become the "master tag". This one will not start any track, but will enable the WIFI interface while present (by default: AP mode, SSID "ClosedPlayer", PASS "123456789"). Note that some boards may brown out when starting WIFI while powered from USB. Should you have trouble getting WIFI to work, first thing to try will be running from a dedicated power supply (strong USB chargers or powerbanks are the easiest option).
 - The next RIFD tags scanned will become associated with folders containing MP3 files, automatically, one by one.
 - Association between RFID tags and files are stored in a file "tags.txt" in the root folder of the SD card. If auto-association does not produce the desired results, you can simply edit this in a text editor.
+- Buttons to skip / seek forward backward
+- To upload new tracks to a closed ClosedPlayer, scan the "master tag", connect to the ClosedPlayer AP (see above), and navigate to http://192.168.4.1 . Upload tracks (usually one directory). Remove WIFI tag, and scan a new unassigned tag to associate it with the newly uploaded directory.
 
 ### SD-card file layout
 
 - Copy your MP3 files onto the SD-card, organized in directories.
   - E.g. one directory per album / play.
   - Directories can be nested, arbitrarily, but each directory should usually contain only *either* MP3 files *or* subdirectories
-- If the auto-association of key to folders is not correct, you can edit "tags.txt", manually.
-- Uploading via the network is not yet implemented. Write to the SD card, directly.
-
+- If the auto-association of key to folders is not correct, you can edit "tags.txt", manually. You can also associate a tag with several directories, or arbitrary files.
 
 ## Background ##
 
