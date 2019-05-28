@@ -6,7 +6,7 @@ The key idea of the player is that tracks are selected simply by placing an RFID
 
 ## Status
 
-The project is functional, and I have turned it into a birthday gift, usuccessfully. However, I'll admit there are some rough edges left to address, esp. in the "administrative backend": Importantly uploading tracks, and making non-standard links to tags over wifi works, but is not a pretty sight. Also, documentation is still fairly rough, too, so you should not be a complete novice to ESP32, or willing to read on your own. Further, some obvious features such as shuffle / loop / equalizer are still missing.
+The project is functional, and I have turned it into a birthday gift, successfully. However, I'll admit there are some rough edges left to address, esp. in the "administrative backend": Importantly uploading tracks, and making non-standard links to tags over wifi works, but is not a pretty sight. Also, documentation is still fairly rough, so if you want to build this, some experience with microcontrollers, or a high willingness to learn are definitely recommended. Further, some obvious features such as shuffle / loop / equalizer are still missing.
 
 ## Design objctives
 
