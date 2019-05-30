@@ -421,12 +421,6 @@ void loadPlaylistForUid(String uid) {
 
 void startOrResumePlaying() {
   if (controls.uid == state.uid) {  // resume previous
-    if (state.finished) {  // special case, if play was at end, and we remove / re-add tag: Start over
-      if (!state.list.isEmpty()) {
-        state.list.reset();
-        startTrack(state.list.next());
-      }
-    }
   } else {  // new tag
     loadPlaylistForUid(controls.uid);
     startTrack(state.list.next());
@@ -491,7 +485,7 @@ void loop() {
   if (controls.haveTag()) {
     if (vol != controls.volume) {
       vol = controls.volume;
-      realout->SetGain(2.0 - (controls.volume / 2048.0));
+      realout->SetGain(3.0 - (controls.volume / (4096.0 / 3)));
     }
     if (!state.playing) {
       startOrResumePlaying();
@@ -519,6 +513,10 @@ void loop() {
   } else {
     if (state.playing) {
       stopPlaying();
+    }
+    if (state.finished) {
+      state.uid = "";  // Card was finished, so clear resume state, when it is removed. That way, if card is removed, readded, playing will start over.
+      state.finished = false;
     }
     stopWebInterface();
   }
