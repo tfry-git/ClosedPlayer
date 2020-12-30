@@ -61,13 +61,14 @@ ESP32 to Headphone (PDM output via I2S; alternatives available):
 - GPIO22 -> in
 - Gnd -> Gnd
 
-Dummy:
+Dummy (unless using additional wiring as detailed, below):
 - GPIO39 -> Gnd (for max volume) or VCC/2 (for normal volume)
+- GPIO36 -> 3.3v
 
 ### Building the "full" version
 
 #### Additional hardware
-- An I2S DAC (e.g. PT8211)
+- An I2S DAC (if using a PT8211, you will have to make a minor modification to the ESP8266Audio library, or you'll get more noise than sound: https://github.com/earlephilhower/ESP8266Audio/issues/100#issuecomment-483688756)
 - Audio amplifier - Note: There are some modules sporting an I2S DAC *and* amplifier. Consider those, if you want an easy solution.
 - Speaker
 - Two buttons
@@ -87,7 +88,7 @@ RGB-Status LED (common kathode, add resistors as required):
 - GPIO16 -> Red (indicates error states, low battery)
 
 Power:
-- GPIO39 -> Connected to battery voltage for sensing battery state. **Be sure to limit the voltage range**, e.g. using a voltage divider. You may also have to adjust the margins in config.h. If you want to skip this, connect to 3.3v.
+- GPIO36 -> Connected to battery voltage for sensing battery state. **Be sure to limit the voltage range**, e.g. using a voltage divider. You may also have to adjust the margins in config.h. If you want to skip this, connect to 3.3v.
 - GPIO12 -> Goes high, when power should be on, goes low to shut down.
 
 ## Basic operation
